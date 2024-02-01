@@ -65,3 +65,4 @@ package-lock.json
 /lib/
 dist/
 dist/.*
+.env
