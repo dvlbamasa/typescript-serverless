@@ -4,13 +4,13 @@ import { saveUser  } from '../db/users';
 
 export const register = async(req: express.Request, res: express.Response) => {
     try {
-        const { id, email, password, username} = req.body;
+        const { id, email, username} = req.body;
 
-        if (!id || !email || !password || !username) {
+        if (!id || !email || !username) {
             return res.sendStatus(400);
         }
 
-        const user = await saveUser(id, username, email, password);
+        const user = await saveUser(id, username, email);
 
         return res.status(200).json(user).end();
     } catch (error) {
