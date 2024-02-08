@@ -1,9 +1,10 @@
 import express from 'express';
 
-import {getAllUsers, getUser, getUserHistory} from '../controllers/users';
+import {register, getAllUsers, getUser, getUserHistory} from '../controllers/users';
 
 export default (router: express.Router) => {
-    router.get('/users', getAllUsers);
-    router.get('/user/:id', getUser);
-    router.get('/user/:id/history', getUserHistory)
+    router.post('/api/v1/user', register);
+    router.get('/api/v1/users', getAllUsers);
+    router.get('/api/v1/user/:id', getUser);
+    router.get('/api/v1/user/:id/history', getUserHistory)
 };

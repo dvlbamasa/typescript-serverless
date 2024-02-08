@@ -2,6 +2,7 @@ import AWS, { DynamoDB } from 'aws-sdk';
 
 const dynamoClient = new AWS.DynamoDB.DocumentClient();
 const TABLE_NAME = ("User");
+const LATEST_VERSION = 'v0_audit';
 
 class User {
     constructor(
@@ -14,23 +15,24 @@ class User {
 }
 
 export const saveUser = async (id: string, username: string, email: string) => {
-    let date_time = new Date().toISOString();
+    const date_time = new Date().toISOString();
+
+    // GET data by id if existing and retrive the value for latest
     const existingUser = await getUserById(id);
-
     let latest = existingUser.Item?.latest;
-    let latestVersion;
 
+    let auditVersion;
+    // Format the audit_version accordingly depending on the value of latest
+    // If existing, increment latest value; if not, set value to 1
     if (!latest) {
-      latestVersion = 'v1_audit';
       latest = 1;
+      auditVersion = formatAuditVersion(latest);
     } else {
-      latest = latest + 1;
-      latestVersion = 'v' + latest + '_audit';
+      auditVersion = formatAuditVersion(++latest);
     }
 
-    const latestUser = new User (id, 'v0_audit', username, email, date_time, latest);
-    const user = new User (id, latestVersion, username, email, date_time, latest);
-    console.log(user);
+    // CREATE a new version of the data - audit_version + 1
+    const user = new User (id, auditVersion, username, email, date_time, latest);
     const params = {
         TableName: TABLE_NAME,
         Item: user
@@ -43,7 +45,8 @@ export const saveUser = async (id: string, username: string, email: string) => {
         }
     }).promise();
 
-
+    // CREATE if latest data is not existing or UPDATE the latest version of the data
+    const latestUser = new User (id, LATEST_VERSION, username, email, date_time, latest);
     const params2 = {
         TableName: TABLE_NAME,
         Item: latestUser
@@ -75,7 +78,7 @@ export const getUserById = async (userId: string) => {
     TableName: TABLE_NAME,
     Key: {
       id: userId,
-      audit_version: 'v0_audit'
+      audit_version: LATEST_VERSION
     }
 
   };
@@ -108,7 +111,11 @@ export const getUsersHistory = async (userId: string) => {
   }).promise();
 
   const items = users.Items?.filter((item)=> {
-    return item.audit_version !== 'v0_audit';
+    return item.audit_version !== LATEST_VERSION;
   });
   return items;
+}
+
+function formatAuditVersion(latestValue: number): string {
+  return 'v' + latestValue + '_audit';
 }
