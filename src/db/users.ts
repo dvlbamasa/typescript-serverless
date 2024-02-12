@@ -2,23 +2,25 @@ import AWS, { DynamoDB } from 'aws-sdk';
 
 const dynamoClient = new AWS.DynamoDB.DocumentClient();
 const TABLE_NAME = ("User");
-const LATEST_VERSION = 'v0_audit';
+const INDEX_NAME = 'audit_version-index';
+const LATEST_VERSION = 'v0_';
 
 class User {
     constructor(
         public id: string,
         public audit_version: string,
+        public user_type: string,
         public username: string, 
         public email: string, 
         public date_time: string,
         public latest: number) {}
 }
 
-export const saveUser = async (id: string, username: string, email: string) => {
+export const saveUser = async (id: string, username: string, user_type: string, email: string) => {
     const date_time = new Date().toISOString();
 
     // GET data by id if existing and retrive the value for latest
-    const existingUser = await getUserById(id);
+    const existingUser = await getUserById(id, user_type);
     let latest = existingUser.Item?.latest;
 
     let auditVersion;
@@ -26,13 +28,13 @@ export const saveUser = async (id: string, username: string, email: string) => {
     // If existing, increment latest value; if not, set value to 1
     if (!latest) {
       latest = 1;
-      auditVersion = formatAuditVersion(latest);
+      auditVersion = formatAuditVersion(latest, user_type);
     } else {
-      auditVersion = formatAuditVersion(++latest);
+      auditVersion = formatAuditVersion(++latest, user_type);
     }
 
     // CREATE a new version of the data - audit_version + 1
-    const user = new User (id, auditVersion, username, email, date_time, latest);
+    const user = new User (id, auditVersion, user_type, username, email, date_time, latest);
     const params = {
         TableName: TABLE_NAME,
         Item: user
@@ -46,7 +48,8 @@ export const saveUser = async (id: string, username: string, email: string) => {
     }).promise();
 
     // CREATE if latest data is not existing or UPDATE the latest version of the data
-    const latestUser = new User (id, LATEST_VERSION, username, email, date_time, latest);
+    const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
+    const latestUser = new User (id, LATEST_AUDIT_VERSION, user_type, username, email, date_time, latest);
     const params2 = {
         TableName: TABLE_NAME,
         Item: latestUser
@@ -60,25 +63,35 @@ export const saveUser = async (id: string, username: string, email: string) => {
     }).promise();
 }
 
-export const getUsers = async () => {
-    const params = {
-        TableName: TABLE_NAME
-    };
-    return await dynamoClient.scan(params, function (err, data) {
-        if (err) {
-          console.log("Error", err);
-        } else {
-          console.log("Success", data);
-        }
-    }).promise();
+export const getUsers = async (user_type: string) => {
+  const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: TABLE_NAME,
+    IndexName: INDEX_NAME,
+    KeyConditionExpression: '#pk = :pk',
+    ExpressionAttributeNames: {
+      "#pk": 'audit_version'
+    },
+    ExpressionAttributeValues: {
+      ":pk": LATEST_AUDIT_VERSION
+    }
+  };
+  return await dynamoClient.query(params, (err, data) => {
+      if (err) {
+        console.log("Error", err);
+      } else {
+        console.log("Successful in History fetch", data);
+      }
+  }).promise();
 }
 
-export const getUserById = async (userId: string) => {
+export const getUserById = async (userId: string, user_type: string) => {
+  const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
   const params = {
     TableName: TABLE_NAME,
     Key: {
       id: userId,
-      audit_version: LATEST_VERSION
+      audit_version: LATEST_AUDIT_VERSION
     }
 
   };
@@ -91,7 +104,8 @@ export const getUserById = async (userId: string) => {
   }).promise();
 }
 
-export const getUsersHistory = async (userId: string) => {
+export const getUsersHistory = async (userId: string, user_type: string) => {
+  const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk',
@@ -111,11 +125,11 @@ export const getUsersHistory = async (userId: string) => {
   }).promise();
 
   const items = users.Items?.filter((item)=> {
-    return item.audit_version !== LATEST_VERSION;
+    return item.audit_version !== LATEST_AUDIT_VERSION;
   });
   return items;
 }
 
-function formatAuditVersion(latestValue: number): string {
-  return 'v' + latestValue + '_audit';
+function formatAuditVersion(latestValue: number, user_type: string): string {
+  return 'v' + latestValue + '_' + user_type;
 }
