@@ -35,9 +35,14 @@ export const saveUser = async (id: string, username: string, user_type: string, 
 
     // CREATE a new version of the data - audit_version + 1
     const user = new User (id, auditVersion, user_type, username, email, date_time, latest);
+
+    // Create condition expression to enforce eventual consistency and prevent duplicates
+    const conditionExpression:string = `attribute_not_exists(${id}) AND attribute_not_exists(${auditVersion}) AND attribute_not_exists(${latest})`;
+    
     const params = {
         TableName: TABLE_NAME,
-        Item: user
+        Item: user,
+        conditionExpression: conditionExpression
     };
     await dynamoClient.put(params, function (err, data) {
         if (err) {
@@ -47,7 +52,7 @@ export const saveUser = async (id: string, username: string, user_type: string, 
         }
     }).promise();
 
-    // CREATE if latest data is not existing or UPDATE the latest version of the data
+    // CREATE latest data if it is not existing or UPDATE the existing latest version of the data
     const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
     const latestUser = new User (id, LATEST_AUDIT_VERSION, user_type, username, email, date_time, latest);
     const params2 = {
@@ -63,18 +68,20 @@ export const saveUser = async (id: string, username: string, user_type: string, 
     }).promise();
 }
 
-export const getUsers = async (user_type: string) => {
+export const getUsers = async (user_type: string, limit: number, startKey: any) => {
   const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     IndexName: INDEX_NAME,
+    ExclusiveStartKey: startKey,
     KeyConditionExpression: '#pk = :pk',
     ExpressionAttributeNames: {
       "#pk": 'audit_version'
     },
     ExpressionAttributeValues: {
       ":pk": LATEST_AUDIT_VERSION
-    }
+    },
+    Limit: limit
   };
   return await dynamoClient.query(params, (err, data) => {
       if (err) {
@@ -113,8 +120,10 @@ export const getUsersHistory = async (userId: string, user_type: string) => {
       "#pk": 'id'
     },
     ExpressionAttributeValues: {
-      ":pk": userId
-    }
+      ":pk": userId,
+      ":type_value": user_type
+    },
+    FilterExpression: 'user_type =  :type_value'
   };
   const users = await dynamoClient.query(params, (err, data) => {
       if (err) {

@@ -22,8 +22,9 @@ export const register = async(req: express.Request, res: express.Response) => {
 export const getAllUsers = async (req: express.Request, res: express.Response) => {
     try {
         const { type } = req.params;
+        const {limit, startKey} = req.body;
 
-        const users = await getUsers(type);
+        const users = await getUsers(type, limit, startKey);
 
         return res.status(200).json(users);
     } catch (error) {
