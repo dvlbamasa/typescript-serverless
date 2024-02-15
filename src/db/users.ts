@@ -37,12 +37,12 @@ export const saveUser = async (id: string, username: string, user_type: string, 
     const user = new User (id, auditVersion, user_type, username, email, date_time, latest);
 
     // Create condition expression to enforce eventual consistency and prevent duplicates
-    const conditionExpression:string = `attribute_not_exists(${id}) AND attribute_not_exists(${auditVersion}) AND attribute_not_exists(${latest})`;
+    const conditionExpression:string = `attribute_not_exists(id) AND attribute_not_exists(audit_version) AND attribute_not_exists(latest)`;
     
     const params = {
         TableName: TABLE_NAME,
         Item: user,
-        conditionExpression: conditionExpression
+        ConditionExpression: conditionExpression
     };
     await dynamoClient.put(params, function (err, data) {
         if (err) {
