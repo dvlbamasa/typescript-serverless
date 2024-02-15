@@ -10,7 +10,7 @@ export const register = async(req: express.Request, res: express.Response) => {
             return res.sendStatus(400);
         }
 
-        const user = await saveUser(id, username, user_type, email);
+        const user = await saveUser(req.body);
 
         return res.status(200).json(user).end();
     } catch (error) {
@@ -22,9 +22,8 @@ export const register = async(req: express.Request, res: express.Response) => {
 export const getAllUsers = async (req: express.Request, res: express.Response) => {
     try {
         const { type } = req.params;
-        const {limit, startKey} = req.body;
 
-        const users = await getUsers(type, limit, startKey);
+        const users = await getUsers(type, req.body);
 
         return res.status(200).json(users);
     } catch (error) {
@@ -48,9 +47,7 @@ export const getUser = async (req: express.Request, res: express.Response) => {
 
 export const getUserHistory = async (req: express.Request, res: express.Response) => {
     try {
-        const { type, id } = req.params;
-
-        const user = await getUsersHistory(id, type);
+        const user = await getUsersHistory(req.params, req.query);
 
         return res.status(200).json(user);
     } catch (error) {

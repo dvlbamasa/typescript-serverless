@@ -16,7 +16,8 @@ class User {
         public latest: number) {}
 }
 
-export const saveUser = async (id: string, username: string, user_type: string, email: string) => {
+export const saveUser = async (request: any) => {
+    const { id, email, user_type, username } = request;
     const date_time = new Date().toISOString();
 
     // GET data by id if existing and retrive the value for latest
@@ -68,7 +69,8 @@ export const saveUser = async (id: string, username: string, user_type: string, 
     }).promise();
 }
 
-export const getUsers = async (user_type: string, limit: number, startKey: any) => {
+export const getUsers = async (user_type: string, request: any) => {
+  const {limit, startKey, scanIndexForward} = request;
   const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
@@ -81,7 +83,8 @@ export const getUsers = async (user_type: string, limit: number, startKey: any) 
     ExpressionAttributeValues: {
       ":pk": LATEST_AUDIT_VERSION
     },
-    Limit: limit
+    Limit: limit,
+    ScanIndexForward:scanIndexForward
   };
   return await dynamoClient.query(params, (err, data) => {
       if (err) {
@@ -111,8 +114,10 @@ export const getUserById = async (userId: string, user_type: string) => {
   }).promise();
 }
 
-export const getUsersHistory = async (userId: string, user_type: string) => {
-  const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
+export const getUsersHistory = async (request: any, query_params: any) => {
+  const { type, id } = request;
+  const {scanIndexForward} = query_params;
+  const LATEST_AUDIT_VERSION = LATEST_VERSION + type;
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk',
@@ -120,10 +125,11 @@ export const getUsersHistory = async (userId: string, user_type: string) => {
       "#pk": 'id'
     },
     ExpressionAttributeValues: {
-      ":pk": userId,
-      ":type_value": user_type
+      ":pk": id,
+      ":type_value": type
     },
-    FilterExpression: 'user_type =  :type_value'
+    FilterExpression: 'user_type =  :type_value',
+    ScanIndexForward: scanIndexForward
   };
   const users = await dynamoClient.query(params, (err, data) => {
       if (err) {
