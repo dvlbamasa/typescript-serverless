@@ -20,13 +20,15 @@ export const saveUser = async (request: any) => {
     const { id, email, user_type, username } = request;
     const date_time = new Date().toISOString();
 
-    // GET data by id if existing and retrive the value for latest
+    // GET data by id if existing and retrive the value of latest
     const existingUser = await getUserById(id, user_type);
     let latest = existingUser.Item?.latest;
 
     let auditVersion;
-    // Format the audit_version accordingly depending on the value of latest
-    // If existing, increment latest value; if not, set value to 1
+    /*
+     Format the audit_version accordingly depending on the value of the latest attribute
+     If existing, increment latest value; if not, set value to 1
+    */
     if (!latest) {
       latest = 1;
       auditVersion = formatAuditVersion(latest, user_type);
@@ -45,15 +47,14 @@ export const saveUser = async (request: any) => {
         Item: user,
         ConditionExpression: conditionExpression
     };
-    await dynamoClient.put(params, function (err, data) {
-        if (err) {
-          console.log("Error", err);
-        } else {
-          console.log("Success", data);
-        }
-    }).promise();
 
-    // CREATE latest data if it is not existing or UPDATE the existing latest version of the data
+    try {
+      await dynamoClient.put(params).promise();
+    } catch (err) {
+      console.log(err);
+    }
+    
+    // CREATE latest data (v0_type) if it is not existing or UPDATE the existing latest version of the data
     const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
     const latestUser = new User (id, LATEST_AUDIT_VERSION, user_type, username, email, date_time, latest);
     const params2 = {
