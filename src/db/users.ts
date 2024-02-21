@@ -60,53 +60,17 @@ export const saveUser = async (request: any) => {
       auditVersion = formatAuditVersion(++latest, user_type);
     }
 
-    // CREATE a new version of the data - audit_version + 1
-    const user = new User (id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+    // CREATE a new version of the data -> audit_version + 1
+    await createNewItem(id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest);
 
-    // Create condition expression to enforce eventual consistency and prevent duplicates
-    const conditionExpression:string = `attribute_not_exists(id) AND attribute_not_exists(sort_key) AND attribute_not_exists(latest)`;
-    
-    const params = {
-        TableName: TABLE_NAME,
-        Item: user,
-        ConditionExpression: conditionExpression
-    };
+    // Create STATUS ITEM
+    await createStatusItem(id, status, username);
 
-    try {
-      await dynamoClient.put(params).promise();
-    } catch (err) {
-      console.log(err);
-    }
-
-    const statusItem = new Status(id, STATUS_KEY, status, username);
-    const paramsStatus = {
-      TableName: TABLE_NAME,
-      Item: statusItem
-    };
-    await dynamoClient.put(paramsStatus).promise();
-
-    const corporate_account_data:string = corporate_account;
-    const corporateItem = new CorporateAccount(id, CORPORATE_KEY, corporate_account, corporate_name, username, corporate_account_data);
-    const paramsCorporate = {
-      TableName: TABLE_NAME,
-      Item: corporateItem
-    };
-    await dynamoClient.put(paramsCorporate).promise();
+    // Create CORPORTE ACCOUNT ITEM
+    await createCorporateItem(corporate_account, id, corporate_name, username);
     
     // CREATE latest data (v0#type) if it is not existing or UPDATE the existing latest version of the data
-    const LATEST_AUDIT_VERSION = formatAuditVersion(0, user_type);
-    const latestUser = new User (id, LATEST_AUDIT_VERSION, user_type, corporate_account, status, username, email, date_time, latest, user_type);
-    const params2 = {
-        TableName: TABLE_NAME,
-        Item: latestUser
-    };
-    return await dynamoClient.put(params2, function (err, data) {
-        if (err) {
-          console.log("Error", err);
-        } else {
-          console.log("Success", data);
-        }
-    }).promise();
+    return await createOrUpdateLatestItem(user_type, id, corporate_account, status, username, email, date_time, latest);
 }
 
 export const getUsers = async (user_type: string, request: any) => {
@@ -166,6 +130,51 @@ export const getUserById = async (userId: string, user_type: string) => {
   }).promise();
 }
 
+export const getUserDataById = async (userId: string) => {
+  console.log(userId)
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: TABLE_NAME,
+    KeyConditionExpression: '#pk = :pk',
+    ExpressionAttributeNames: {
+      "#pk": 'id'
+    },
+    ExpressionAttributeValues: {
+      ":pk": userId,
+    }
+  };
+  return await dynamoClient.query(params, function (err, data) {
+      if (err) {
+        console.log("Error", err);
+      } else {
+        console.log("Success", data);
+      }
+  }).promise();
+}
+
+export const getUserCorporateAndStatusById = async (userId: string) => {
+  console.log(userId)
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: TABLE_NAME,
+    KeyConditionExpression: '#pk = :pk AND (#sk BETWEEN :corp_key AND :status_key)',
+    ExpressionAttributeNames: {
+      "#pk": 'id',
+      "#sk": 'sort_key'
+    },
+    ExpressionAttributeValues: {
+      ":pk": userId,
+      ":corp_key" : CORPORATE_KEY,
+      ":status_key" : STATUS_KEY
+    }
+  };
+  return await dynamoClient.query(params, function (err, data) {
+      if (err) {
+        console.log("Error", err);
+      } else {
+        console.log("Success", data);
+      }
+  }).promise();
+}
+
 export const getUsersHistory = async (request: any, query_params: any) => {
   const { type, id } = request;
   const {scanIndexForward} = query_params;
@@ -195,6 +204,59 @@ export const getUsersHistory = async (request: any, query_params: any) => {
     return item.sort_key !== LATEST_AUDIT_VERSION;
   });
   return items;
+}
+
+async function createOrUpdateLatestItem(user_type: any, id: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
+  const LATEST_AUDIT_VERSION = formatAuditVersion(0, user_type);
+  const latestUser = new User(id, LATEST_AUDIT_VERSION, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+  const params2 = {
+    TableName: TABLE_NAME,
+    Item: latestUser
+  };
+  return await dynamoClient.put(params2, function (err, data) {
+    if (err) {
+      console.log("Error", err);
+    } else {
+      console.log("Success", data);
+    }
+  }).promise();
+}
+
+async function createNewItem(id: any, auditVersion: string, user_type: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
+  const user = new User(id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+
+  // Create condition expression to enforce eventual consistency and prevent duplicates
+  const conditionExpression: string = `attribute_not_exists(id) AND attribute_not_exists(sort_key) AND attribute_not_exists(latest)`;
+  const params = {
+    TableName: TABLE_NAME,
+    Item: user,
+    ConditionExpression: conditionExpression
+  };
+
+  try {
+    await dynamoClient.put(params).promise();
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+async function createCorporateItem(corporate_account: any, id: any, corporate_name: any, username: any) {
+  const corporate_account_data: string = corporate_account;
+  const corporateItem = new CorporateAccount(id, CORPORATE_KEY, corporate_account, corporate_name, username, corporate_account_data);
+  const paramsCorporate = {
+    TableName: TABLE_NAME,
+    Item: corporateItem
+  };
+  await dynamoClient.put(paramsCorporate).promise();
+}
+
+async function createStatusItem(id: any, status: any, username: any) {
+  const statusItem = new Status(id, STATUS_KEY, status, username);
+  const paramsStatus = {
+    TableName: TABLE_NAME,
+    Item: statusItem
+  };
+  await dynamoClient.put(paramsStatus).promise();
 }
 
 function formatAuditVersion(latestValue: number, user_type: string): string {
