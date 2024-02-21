@@ -2,33 +2,57 @@ import AWS, { DynamoDB } from 'aws-sdk';
 
 const dynamoClient = new AWS.DynamoDB.DocumentClient();
 const TABLE_NAME = ("User");
-const INDEX_NAME = 'audit_version-index';
-const LATEST_VERSION = 'v0_';
+const INDEX_NAME = 'sort_key-data-index';
+const LATEST_VERSION = 'v0#';
+const KEY_SEPARATOR = '#';
+const CORPORATE_KEY = 'CORPORATE';
+const STATUS_KEY = 'STATUS';
 
 class User {
     constructor(
         public id: string,
-        public audit_version: string,
+        public sort_key: string,
         public user_type: string,
+        public corporate_account: number,
+        public status: string,
         public username: string, 
         public email: string, 
         public date_time: string,
-        public latest: number) {}
+        public latest: number,
+        public data: string) {}
+}
+
+class Status {
+    constructor(
+      public id: string,
+      public sort_key: string,
+      public data: string,
+      public username: string){}
+}
+
+class CorporateAccount {
+  constructor(
+    public id: string,
+    public sort_key: string,
+    public corporate_account: number,
+    public corporate_name: string,
+    public username: string,
+    public data: string){}
 }
 
 export const saveUser = async (request: any) => {
-    const { id, email, user_type, username } = request;
+    const { id, email, user_type, corporate_account, corporate_name, status, username } = request;
     const date_time = new Date().toISOString();
 
     // GET data by id if existing and retrive the value of latest
     const existingUser = await getUserById(id, user_type);
     let latest = existingUser.Item?.latest;
 
-    let auditVersion;
     /*
-     Format the audit_version accordingly depending on the value of the latest attribute
+     Format the sort_key accordingly depending on the value of the latest attribute
      If existing, increment latest value; if not, set value to 1
     */
+    let auditVersion;
     if (!latest) {
       latest = 1;
       auditVersion = formatAuditVersion(latest, user_type);
@@ -36,53 +60,44 @@ export const saveUser = async (request: any) => {
       auditVersion = formatAuditVersion(++latest, user_type);
     }
 
-    // CREATE a new version of the data - audit_version + 1
-    const user = new User (id, auditVersion, user_type, username, email, date_time, latest);
+    // CREATE a new version of the data -> audit_version + 1
+    await createNewItem(id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest);
 
-    // Create condition expression to enforce eventual consistency and prevent duplicates
-    const conditionExpression:string = `attribute_not_exists(id) AND attribute_not_exists(audit_version) AND attribute_not_exists(latest)`;
-    
-    const params = {
-        TableName: TABLE_NAME,
-        Item: user,
-        ConditionExpression: conditionExpression
-    };
+    // Create STATUS ITEM
+    await createStatusItem(id, status, username);
 
-    try {
-      await dynamoClient.put(params).promise();
-    } catch (err) {
-      console.log(err);
-    }
+    // Create CORPORTE ACCOUNT ITEM
+    await createCorporateItem(corporate_account, id, corporate_name, username);
     
-    // CREATE latest data (v0_type) if it is not existing or UPDATE the existing latest version of the data
-    const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
-    const latestUser = new User (id, LATEST_AUDIT_VERSION, user_type, username, email, date_time, latest);
-    const params2 = {
-        TableName: TABLE_NAME,
-        Item: latestUser
-    };
-    return await dynamoClient.put(params2, function (err, data) {
-        if (err) {
-          console.log("Error", err);
-        } else {
-          console.log("Success", data);
-        }
-    }).promise();
+    // CREATE latest data (v0#type) if it is not existing or UPDATE the existing latest version of the data
+    return await createOrUpdateLatestItem(user_type, id, corporate_account, status, username, email, date_time, latest);
 }
 
 export const getUsers = async (user_type: string, request: any) => {
-  const {limit, startKey, scanIndexForward} = request;
-  const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
+  const {limit, startKey, scanIndexForward, corporate_account, status} = request;
+  let gsi_pk = LATEST_VERSION + user_type;
+  let gsi_sk = user_type;
+  if (corporate_account) {
+    gsi_pk = CORPORATE_KEY;
+    gsi_sk = corporate_account;
+  }
+  else if (status) {
+    gsi_pk = STATUS_KEY;
+    gsi_sk = status;
+  }
+  console.log(gsi_pk + " " + gsi_sk);
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     IndexName: INDEX_NAME,
     ExclusiveStartKey: startKey,
-    KeyConditionExpression: '#pk = :pk',
+    KeyConditionExpression: '#pk = :pk and #sk = :sk',
     ExpressionAttributeNames: {
-      "#pk": 'audit_version'
+      "#pk": 'sort_key',
+      "#sk": 'data'
     },
     ExpressionAttributeValues: {
-      ":pk": LATEST_AUDIT_VERSION
+      ":pk": gsi_pk,
+      ":sk": gsi_sk
     },
     Limit: limit,
     ScanIndexForward:scanIndexForward
@@ -102,11 +117,56 @@ export const getUserById = async (userId: string, user_type: string) => {
     TableName: TABLE_NAME,
     Key: {
       id: userId,
-      audit_version: LATEST_AUDIT_VERSION
+      sort_key: LATEST_AUDIT_VERSION
     }
 
   };
   return await dynamoClient.get(params, function (err, data) {
+      if (err) {
+        console.log("Error", err);
+      } else {
+        console.log("Success", data);
+      }
+  }).promise();
+}
+
+export const getUserDataById = async (userId: string) => {
+  console.log(userId)
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: TABLE_NAME,
+    KeyConditionExpression: '#pk = :pk',
+    ExpressionAttributeNames: {
+      "#pk": 'id'
+    },
+    ExpressionAttributeValues: {
+      ":pk": userId,
+    }
+  };
+  return await dynamoClient.query(params, function (err, data) {
+      if (err) {
+        console.log("Error", err);
+      } else {
+        console.log("Success", data);
+      }
+  }).promise();
+}
+
+export const getUserCorporateAndStatusById = async (userId: string) => {
+  console.log(userId)
+  const params: DynamoDB.DocumentClient.QueryInput = {
+    TableName: TABLE_NAME,
+    KeyConditionExpression: '#pk = :pk AND (#sk BETWEEN :corp_key AND :status_key)',
+    ExpressionAttributeNames: {
+      "#pk": 'id',
+      "#sk": 'sort_key'
+    },
+    ExpressionAttributeValues: {
+      ":pk": userId,
+      ":corp_key" : CORPORATE_KEY,
+      ":status_key" : STATUS_KEY
+    }
+  };
+  return await dynamoClient.query(params, function (err, data) {
       if (err) {
         console.log("Error", err);
       } else {
@@ -141,11 +201,64 @@ export const getUsersHistory = async (request: any, query_params: any) => {
   }).promise();
 
   const items = users.Items?.filter((item)=> {
-    return item.audit_version !== LATEST_AUDIT_VERSION;
+    return item.sort_key !== LATEST_AUDIT_VERSION;
   });
   return items;
 }
 
+async function createOrUpdateLatestItem(user_type: any, id: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
+  const LATEST_AUDIT_VERSION = formatAuditVersion(0, user_type);
+  const latestUser = new User(id, LATEST_AUDIT_VERSION, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+  const params2 = {
+    TableName: TABLE_NAME,
+    Item: latestUser
+  };
+  return await dynamoClient.put(params2, function (err, data) {
+    if (err) {
+      console.log("Error", err);
+    } else {
+      console.log("Success", data);
+    }
+  }).promise();
+}
+
+async function createNewItem(id: any, auditVersion: string, user_type: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
+  const user = new User(id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+
+  // Create condition expression to enforce eventual consistency and prevent duplicates
+  const conditionExpression: string = `attribute_not_exists(id) AND attribute_not_exists(sort_key) AND attribute_not_exists(latest)`;
+  const params = {
+    TableName: TABLE_NAME,
+    Item: user,
+    ConditionExpression: conditionExpression
+  };
+
+  try {
+    await dynamoClient.put(params).promise();
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+async function createCorporateItem(corporate_account: any, id: any, corporate_name: any, username: any) {
+  const corporate_account_data: string = corporate_account;
+  const corporateItem = new CorporateAccount(id, CORPORATE_KEY, corporate_account, corporate_name, username, corporate_account_data);
+  const paramsCorporate = {
+    TableName: TABLE_NAME,
+    Item: corporateItem
+  };
+  await dynamoClient.put(paramsCorporate).promise();
+}
+
+async function createStatusItem(id: any, status: any, username: any) {
+  const statusItem = new Status(id, STATUS_KEY, status, username);
+  const paramsStatus = {
+    TableName: TABLE_NAME,
+    Item: statusItem
+  };
+  await dynamoClient.put(paramsStatus).promise();
+}
+
 function formatAuditVersion(latestValue: number, user_type: string): string {
-  return 'v' + latestValue + '_' + user_type;
+  return `v${latestValue}${KEY_SEPARATOR}${user_type}`;
 }
