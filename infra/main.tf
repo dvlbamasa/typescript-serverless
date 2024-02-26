@@ -1,12 +1,13 @@
 provider "aws" {
   region     = "us-east-1"
+  #attach here your access_key and secret_key of your AWS personal account
+  access_key = ""
+  secret_key = ""
 }
 
 resource "aws_dynamodb_table" "basic-dynamodb-table" {
-  name           = "User2"
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 1
-  write_capacity = 1
+  name           = "${var.location}"
+  billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "id"
   range_key      = "sort_key"
 
@@ -33,11 +34,6 @@ resource "aws_dynamodb_table" "basic-dynamodb-table" {
     read_capacity      = 1
     projection_type    = "ALL"
   }
-
-  tags = {
-    Name        = "dynamodb-table-1"
-    Environment = "production"
-  }
 }
 
 resource "aws_iam_policy" "lambda_dynamodb_policy" {
@@ -45,8 +41,6 @@ resource "aws_iam_policy" "lambda_dynamodb_policy" {
   path        = "/"
   description = "Lambda to dynamodb"
 
-  # Terraform's "jsonencode" function converts a
-  # Terraform expression result to valid JSON syntax.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -97,8 +91,6 @@ data "archive_file" "lambda" {
 
 
 resource "aws_lambda_function" "terraform_lambda" {
-  # If the file is not in the current working directory you will need to include a
-  # path.module in the filename.
   filename      = "${path.module}/../dist/index.zip"
   function_name = "terraform_lambda"
   role          = aws_iam_role.lambda_dynmodb_role.arn
