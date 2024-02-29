@@ -1,18 +1,21 @@
 import AWS, { DynamoDB } from 'aws-sdk';
+import {v4 as uuidv4} from 'uuid';
+
 
 const dynamoClient = new AWS.DynamoDB.DocumentClient();
-const TABLE_NAME = ("User");
+const TABLE_NAME = ("match-table");
 const INDEX_NAME = 'sort_key-data-index';
-const LATEST_VERSION = 'v0#';
+const SEAFARER_STAGING = 'SEAFARER#STAGING'
 const KEY_SEPARATOR = '#';
-const CORPORATE_KEY = 'CORPORATE';
-const STATUS_KEY = 'STATUS';
+const CORPORATE_KEY = 'SEAFARER#CORPORATE';
+const STATUS_KEY = 'SEAFARER#STATUS';
+const LATEST_AUDIT_VERSION = formatAuditVersion(0);
+
 
 class User {
     constructor(
         public id: string,
-        public sort_key: string,
-        public user_type: string,
+        public sk: string,
         public corporate_account: number,
         public status: string,
         public username: string, 
@@ -25,7 +28,7 @@ class User {
 class Status {
     constructor(
       public id: string,
-      public sort_key: string,
+      public sk: string,
       public data: string,
       public username: string){}
 }
@@ -33,7 +36,7 @@ class Status {
 class CorporateAccount {
   constructor(
     public id: string,
-    public sort_key: string,
+    public sk: string,
     public corporate_account: number,
     public corporate_name: string,
     public username: string,
@@ -41,63 +44,54 @@ class CorporateAccount {
 }
 
 export const saveUser = async (request: any) => {
-    const { id, email, user_type, corporate_account, corporate_name, status, username } = request;
+    const { id, email, corporate_account, corporate_name, status, username } = request;
     const date_time = new Date().toISOString();
-
+    let seafarer_id = id;
+    if (!id) {
+      seafarer_id = uuidv4();
+    }
     // GET data by id if existing and retrive the value of latest
-    const existingUser = await getUserById(id, user_type);
+    const existingUser = await getUserById(seafarer_id);
     let latest = existingUser.Item?.latest;
 
     /*
-     Format the sort_key accordingly depending on the value of the latest attribute
+     Format the sk accordingly depending on the value of the latest attribute
      If existing, increment latest value; if not, set value to 1
     */
     let auditVersion;
     if (!latest) {
       latest = 1;
-      auditVersion = formatAuditVersion(latest, user_type);
+      auditVersion = formatAuditVersion(latest);
     } else {
-      auditVersion = formatAuditVersion(++latest, user_type);
+      auditVersion = formatAuditVersion(++latest);
     }
 
     // CREATE a new version of the data -> audit_version + 1
-    await createNewItem(id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest);
+    await createNewItem(seafarer_id, auditVersion, corporate_account, status, username, email, date_time, latest);
 
     // Create STATUS ITEM
-    await createStatusItem(id, status, username);
+    await createStatusItem(seafarer_id, status, username);
 
     // Create CORPORTE ACCOUNT ITEM
-    await createCorporateItem(corporate_account, id, corporate_name, username);
+    await createCorporateItem(corporate_account, seafarer_id, corporate_name, username);
     
     // CREATE latest data (v0#type) if it is not existing or UPDATE the existing latest version of the data
-    return await createOrUpdateLatestItem(user_type, id, corporate_account, status, username, email, date_time, latest);
+    return await createOrUpdateLatestItem(seafarer_id, corporate_account, status, username, email, date_time, latest);
 }
 
-export const getUsers = async (user_type: string, request: any) => {
-  const {limit, startKey, scanIndexForward, corporate_account, status} = request;
-  let gsi_pk = LATEST_VERSION + user_type;
-  let gsi_sk = user_type;
-  if (corporate_account) {
-    gsi_pk = CORPORATE_KEY;
-    gsi_sk = corporate_account;
-  }
-  else if (status) {
-    gsi_pk = STATUS_KEY;
-    gsi_sk = status;
-  }
-  console.log(gsi_pk + " " + gsi_sk);
+export const getUsers = async (request: any) => {
+  const {limit, startKey, scanIndexForward} = request;
+  let gsi_pk = LATEST_AUDIT_VERSION;
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     IndexName: INDEX_NAME,
     ExclusiveStartKey: startKey,
-    KeyConditionExpression: '#pk = :pk and #sk = :sk',
+    KeyConditionExpression: '#pk = :pk',
     ExpressionAttributeNames: {
-      "#pk": 'sort_key',
-      "#sk": 'data'
+      "#pk": 'sk',
     },
     ExpressionAttributeValues: {
       ":pk": gsi_pk,
-      ":sk": gsi_sk
     },
     Limit: limit,
     ScanIndexForward:scanIndexForward
@@ -111,13 +105,12 @@ export const getUsers = async (user_type: string, request: any) => {
   }).promise();
 }
 
-export const getUserById = async (userId: string, user_type: string) => {
-  const LATEST_AUDIT_VERSION = LATEST_VERSION + user_type;
+export const getUserById = async (userId: string) => {
   const params = {
     TableName: TABLE_NAME,
     Key: {
       id: userId,
-      sort_key: LATEST_AUDIT_VERSION
+      sk: LATEST_AUDIT_VERSION
     }
 
   };
@@ -152,13 +145,12 @@ export const getUserDataById = async (userId: string) => {
 }
 
 export const getUserCorporateAndStatusById = async (userId: string) => {
-  console.log(userId)
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk AND (#sk BETWEEN :corp_key AND :status_key)',
     ExpressionAttributeNames: {
       "#pk": 'id',
-      "#sk": 'sort_key'
+      "#sk": 'sk'
     },
     ExpressionAttributeValues: {
       ":pk": userId,
@@ -176,9 +168,8 @@ export const getUserCorporateAndStatusById = async (userId: string) => {
 }
 
 export const getUsersHistory = async (request: any, query_params: any) => {
-  const { type, id } = request;
+  const { id } = request;
   const {scanIndexForward} = query_params;
-  const LATEST_AUDIT_VERSION = LATEST_VERSION + type;
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk',
@@ -186,10 +177,8 @@ export const getUsersHistory = async (request: any, query_params: any) => {
       "#pk": 'id'
     },
     ExpressionAttributeValues: {
-      ":pk": id,
-      ":type_value": type
+      ":pk": id
     },
-    FilterExpression: 'user_type =  :type_value',
     ScanIndexForward: scanIndexForward
   };
   const users = await dynamoClient.query(params, (err, data) => {
@@ -201,14 +190,13 @@ export const getUsersHistory = async (request: any, query_params: any) => {
   }).promise();
 
   const items = users.Items?.filter((item)=> {
-    return item.sort_key !== LATEST_AUDIT_VERSION;
+    return item.sk !== LATEST_AUDIT_VERSION;
   });
   return items;
 }
 
-async function createOrUpdateLatestItem(user_type: any, id: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
-  const LATEST_AUDIT_VERSION = formatAuditVersion(0, user_type);
-  const latestUser = new User(id, LATEST_AUDIT_VERSION, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+async function createOrUpdateLatestItem(id: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
+  const latestUser = new User(id, LATEST_AUDIT_VERSION, corporate_account, status, username, email, date_time, latest, username);
   const params2 = {
     TableName: TABLE_NAME,
     Item: latestUser
@@ -222,11 +210,11 @@ async function createOrUpdateLatestItem(user_type: any, id: any, corporate_accou
   }).promise();
 }
 
-async function createNewItem(id: any, auditVersion: string, user_type: any, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
-  const user = new User(id, auditVersion, user_type, corporate_account, status, username, email, date_time, latest, user_type);
+async function createNewItem(id: any, auditVersion: string, corporate_account: any, status: any, username: any, email: any, date_time: string, latest: any) {
+  const user = new User(id, auditVersion, corporate_account, status, username, email, date_time, latest, username);
 
   // Create condition expression to enforce eventual consistency and prevent duplicates
-  const conditionExpression: string = `attribute_not_exists(id) AND attribute_not_exists(sort_key) AND attribute_not_exists(latest)`;
+  const conditionExpression: string = `attribute_not_exists(id) AND attribute_not_exists(sk) AND attribute_not_exists(latest)`;
   const params = {
     TableName: TABLE_NAME,
     Item: user,
@@ -259,6 +247,6 @@ async function createStatusItem(id: any, status: any, username: any) {
   await dynamoClient.put(paramsStatus).promise();
 }
 
-function formatAuditVersion(latestValue: number, user_type: string): string {
-  return `v${latestValue}${KEY_SEPARATOR}${user_type}`;
+function formatAuditVersion(latestValue: number): string {
+  return `v${latestValue}${KEY_SEPARATOR}${SEAFARER_STAGING}`;
 }

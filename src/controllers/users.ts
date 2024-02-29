@@ -4,9 +4,9 @@ import { saveUser, getUserById, getUsers, getUsersHistory, getUserDataById, getU
 
 export const register = async(req: express.Request, res: express.Response) => {
     try {
-        const { id, email, user_type, username} = req.body;
+        const { email, username} = req.body;
 
-        if (!id || !email || !user_type || !username) {
+        if  (!email || !username) {
             return res.sendStatus(400);
         }
 
@@ -21,9 +21,7 @@ export const register = async(req: express.Request, res: express.Response) => {
 
 export const getAllUsers = async (req: express.Request, res: express.Response) => {
     try {
-        const { type } = req.params;
-
-        const users = await getUsers(type, req.body);
+        const users = await getUsers(req.body);
 
         return res.status(200).json(users);
     } catch (error) {
@@ -34,9 +32,9 @@ export const getAllUsers = async (req: express.Request, res: express.Response) =
 
 export const getUser = async (req: express.Request, res: express.Response) => {
     try {
-        const { type, id } = req.params;
+        const { id } = req.params;
 
-        const user = await getUserById(id, type);
+        const user = await getUserById(id);
 
         return res.status(200).json(user);
     } catch (error) {

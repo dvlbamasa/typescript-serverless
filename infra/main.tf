@@ -1,15 +1,13 @@
 provider "aws" {
   region     = "us-east-1"
   #attach here your access_key and secret_key of your AWS personal account
-  access_key = ""
-  secret_key = ""
 }
 
 resource "aws_dynamodb_table" "basic-dynamodb-table" {
-  name           = "${var.location}"
+  name           = "match-table"
   billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "id"
-  range_key      = "sort_key"
+  range_key      = "sk"
 
   attribute {
     name = "id"
@@ -17,7 +15,7 @@ resource "aws_dynamodb_table" "basic-dynamodb-table" {
   }
 
   attribute {
-    name = "sort_key"
+    name = "sk"
     type = "S"
   }
 
@@ -28,7 +26,7 @@ resource "aws_dynamodb_table" "basic-dynamodb-table" {
 
   global_secondary_index {
     name               = "sort_key-data-index"
-    hash_key           = "sort_key"
+    hash_key           = "sk"
     range_key          = "data"
     write_capacity     = 1
     read_capacity      = 1
