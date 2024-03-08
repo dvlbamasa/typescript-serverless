@@ -1,12 +1,11 @@
 import express from 'express';
 
-import {register, getAllUsers, getUser, getUserHistory, getUserData, getUserCorporateStatus} from '../controllers/users';
+import {register, getAllUsers, getUser, getUserHistory, getUserData} from '../controllers/users';
 
 export default (router: express.Router) => {
-    router.post('/api/v1/seafarer', register);
-    router.get('/api/v1/seafarer', getAllUsers);
-    router.get('/api/v1/seafarer/:id/latest', getUser);
-    router.get('/api/v1/seafarer/:id', getUserData);
-    router.get('/api/v1/seafarer/:id/status', getUserCorporateStatus);
-    router.get('/api/v1/seafarer/:id/history', getUserHistory)
+    router.post('/api/v1/seafarers', register);
+    router.get('/api/v1/seafarers', getAllUsers);
+    router.get('/api/v1/seafarers/:id/latest', getUser);
+    router.get('/api/v1/seafarers/:id', getUserData);
+    router.get('/api/v1/seafarers/:id/history', getUserHistory);
 };

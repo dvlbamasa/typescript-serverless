@@ -1,6 +1,7 @@
 provider "aws" {
   region     = "us-east-1"
   #attach here your access_key and secret_key of your AWS personal account
+
 }
 
 resource "aws_dynamodb_table" "basic-dynamodb-table" {
@@ -25,7 +26,7 @@ resource "aws_dynamodb_table" "basic-dynamodb-table" {
   }
 
   global_secondary_index {
-    name               = "sort_key-data-index"
+    name               = "sk-data-index"
     hash_key           = "sk"
     range_key          = "data"
     write_capacity     = 1

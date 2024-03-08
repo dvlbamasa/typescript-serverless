@@ -1,6 +1,6 @@
 import express from 'express';
 
-import { saveUser, getUserById, getUsers, getUsersHistory, getUserDataById, getUserCorporateAndStatusById } from '../db/users';
+import { saveUser, getUserById, getUsers, getUsersHistory, getUserDataById, filterSeafarer } from '../db/seafarer';
 
 export const register = async(req: express.Request, res: express.Response) => {
     try {
@@ -21,8 +21,13 @@ export const register = async(req: express.Request, res: express.Response) => {
 
 export const getAllUsers = async (req: express.Request, res: express.Response) => {
     try {
-        const users = await getUsers(req.body);
-
+        const {corporateAccount, status } = req.query;
+        let users;
+        if (corporateAccount || status) {
+            users = await filterSeafarer(req.query);
+        } else {
+            users = await getUsers(req.query);
+        }
         return res.status(200).json(users);
     } catch (error) {
         console.log(error);
@@ -48,19 +53,6 @@ export const getUserData = async (req: express.Request, res: express.Response) =
         const { id } = req.params;
 
         const user = await getUserDataById(id);
-
-        return res.status(200).json(user);
-    } catch (error) {
-        console.log(error);
-        return res.sendStatus(400);
-    }
-};
-
-export const getUserCorporateStatus = async (req: express.Request, res: express.Response) => {
-    try {
-        const { id } = req.params;
-
-        const user = await getUserCorporateAndStatusById(id);
 
         return res.status(200).json(user);
     } catch (error) {
