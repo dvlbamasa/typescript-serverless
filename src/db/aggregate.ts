@@ -1,8 +1,8 @@
 import AWS from 'aws-sdk';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
-import { AGREGATE_SEAFARER_PK, createAggregateSeafarer } from 'types/src/lib/aggregate-seafarer';
-import { AGREGATE_SEAFARER_STATUS_PK, createAggregateSeafarerStatus } from 'types/src/lib/aggregate-seafarer-status';
+import { AGREGATE_SEAFARER_PK, createAggregateSeafarer } from '../types/src/index';
+import { AGREGATE_SEAFARER_STATUS_PK, createAggregateSeafarerStatus } from '../types/src/index';
 
 const dynamoClient = new AWS.DynamoDB.DocumentClient();
 const dynamoDbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
