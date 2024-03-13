@@ -1,11 +1,11 @@
 const TABLE_NAME = ("match-table");
 // Create condition expression to enforce eventual consistency and prevent duplicates
-const conditionExpression: string = `attribute_not_exists(id) AND attribute_not_exists(sk) AND attribute_not_exists(latest)`;
+// const conditionExpression: string = `attribute_not_exists(id) AND attribute_not_exists(sk) AND attribute_not_exists(latest)`;
 
 export interface Seafarer {
     id: string,
     sk: string,
-    corporateAccount: number,
+    corporateAccount: string,
     status: string,
     username: string, 
     email: string, 
@@ -37,8 +37,7 @@ export function createSeafarerItem(id: any, sk: string, corporateAccount: any, s
     const saveSeafarer = {
       Put: {
           TableName: TABLE_NAME,
-          Item: seafarer,
-          ConditionExpression: conditionExpression
+          Item: seafarer
       }
     }
     return saveSeafarer;

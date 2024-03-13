@@ -1,6 +1,6 @@
 import AWS, { DynamoDB } from 'aws-sdk';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import {v4 as uuidv4} from 'uuid';
 import { createAgencyItem, createCorporateItem, createSeafarerItem, createSourceItem, createStatusItem, createVesselItem, createOccupationItem, CORPORATE_SK, STATUS_SK, OCCUPATION_SK, AGENCY_SK, SOURCE_SK, VESSEL_SK} from '../types/src/index';
 import { doAggregation } from './aggregate';
@@ -11,7 +11,7 @@ const TABLE_NAME = ("match-table");
 const INDEX_NAME = 'sk-data-index';
 const LATEST_AUDIT_VERSION = formatAuditVersion(0);
 
-export const saveUser = async (request: any) => {
+export const saveSeafarer = async (request: any) => {
     const { id, email, corporateAccount, corporateName, status, username, occupation, agencyName, source, vesselName } = request;
     const date_time = new Date().toISOString();
     let seafarerId = id, isCreate = false;
@@ -20,9 +20,11 @@ export const saveUser = async (request: any) => {
       seafarerId = uuidv4();
     }
     // GET item by id and check if existing then retrive the value of latest
-    const existingUser = await getUserById(seafarerId);
-    let latest = existingUser.Item?.latest;
-
+    const existingSeafarer = await getSeafarerById(seafarerId);
+    let latest;
+    if (existingSeafarer !== undefined) {
+      latest = existingSeafarer.Item?.latest;
+    }
     /*
      Format the sk accordingly depending on the value of the latest attribute
      If existing, increment latest value; if not, set value to 1
@@ -37,9 +39,11 @@ export const saveUser = async (request: any) => {
 
     // CREATE a new version of the item -> audit_version + 1
     const saveSeafarer = createSeafarerItem(seafarerId, auditVersion, corporateAccount, status, username, email, date_time, latest, agencyName, occupation, source, vesselName);
-    
+    console.log('SAVE SEAFARER 1: ', saveSeafarer);
+
     // CREATE latest data (v0#type) if it is not existing or UPDATE the existing latest version of the data
     const updateLatestSeafarer = createSeafarerItem(seafarerId, LATEST_AUDIT_VERSION, corporateAccount, status, username, email, date_time, latest, agencyName, occupation, source, vesselName);
+    console.log('SAVE SEAFARER 2: ', updateLatestSeafarer);
 
     const seafarerItem = updateLatestSeafarer.Put.Item;
     const saveStatus = createStatusItem(seafarerId, status, username, seafarerItem);
@@ -77,7 +81,7 @@ export const saveUser = async (request: any) => {
   }
 }
 
-export const getUsers = async (request: any) => {
+export const getSeafarers = async (request: any) => {
   const {limit, startKey, scanIndexForward} = request;
   let gsi_pk = LATEST_AUDIT_VERSION;
   const params: DynamoDB.DocumentClient.QueryInput = {
@@ -103,26 +107,18 @@ export const getUsers = async (request: any) => {
   }).promise();
 }
 
-export const getUserById = async (userId: string) => {
-  const params ={
-    TableName: TABLE_NAME,
-    Key: {
-      id: userId,
-      sk: LATEST_AUDIT_VERSION
-    }
-
-  };
-  return await dynamoClient.get(params, function (err, data) {
-      if (err) {
-        console.log("Error", err);
-      } else {
-        console.log("Success", data);
-      }
-  }).promise();
+export const getSeafarerById = async (id: string) => {
+    const getCommand = new GetCommand({
+        TableName: TABLE_NAME,
+        Key: {
+          id: id,
+          sk: LATEST_AUDIT_VERSION
+        }
+    });
+    return await dynamoDbClient.send(getCommand);
 }
 
-export const getUserDataById = async (userId: string) => {
-  console.log(userId)
+export const getSeafarerDataById = async (seafarerId: string) => {
   const params: DynamoDB.DocumentClient.QueryInput = {
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk',
@@ -130,7 +126,7 @@ export const getUserDataById = async (userId: string) => {
       "#pk": 'id'
     },
     ExpressionAttributeValues: {
-      ":pk": userId,
+      ":pk": seafarerId,
     }
   };
   return await dynamoClient.query(params, function (err, data) {
@@ -140,34 +136,6 @@ export const getUserDataById = async (userId: string) => {
         console.log("Success", data);
       }
   }).promise();
-}
-
-export const getUsersHistory = async (request: any, query_params: any) => {
-  const { id } = request;
-  const {scanIndexForward} = query_params;
-  const params: DynamoDB.DocumentClient.QueryInput = {
-    TableName: TABLE_NAME,
-    KeyConditionExpression: '#pk = :pk',
-    ExpressionAttributeNames: {
-      "#pk": 'id',
-    },
-    ExpressionAttributeValues: {
-      ":pk": id
-    },
-    ScanIndexForward: scanIndexForward
-  };
-  const users = await dynamoClient.query(params, (err, data) => {
-      if (err) {
-        console.log("Error", err);
-      } else {
-        console.log("Successful in History fetch", data);
-      }
-  }).promise();
-
-  const items = users.Items?.filter((item)=> {
-    return item.sk !== LATEST_AUDIT_VERSION;
-  });
-  return items;
 }
 
 function formatAuditVersion(latestValue: number): string {
