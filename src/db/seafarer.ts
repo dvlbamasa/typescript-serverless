@@ -1,11 +1,9 @@
-import AWS, { DynamoDB } from 'aws-sdk';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBClient} from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import {v4 as uuidv4} from 'uuid';
 import { createAgencyItem, createCorporateItem, createSeafarerItem, createSourceItem, createStatusItem, createVesselItem, createOccupationItem, CORPORATE_SK, STATUS_SK, OCCUPATION_SK, AGENCY_SK, SOURCE_SK, VESSEL_SK} from '../types/src/index';
 import { doAggregation } from './aggregate';
 
-const dynamoClient = new AWS.DynamoDB.DocumentClient();
 const dynamoDbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE_NAME = ("match-table");
 const INDEX_NAME = 'sk-data-index';
@@ -82,9 +80,9 @@ export const saveSeafarer = async (request: any) => {
 }
 
 export const getSeafarers = async (request: any) => {
-  const {limit, startKey, scanIndexForward} = request;
+  const {startKey, scanIndexForward} = request;
   let gsi_pk = LATEST_AUDIT_VERSION;
-  const params: DynamoDB.DocumentClient.QueryInput = {
+  const queryCommand = new QueryCommand({
     TableName: TABLE_NAME,
     IndexName: INDEX_NAME,
     ExclusiveStartKey: startKey,
@@ -95,16 +93,10 @@ export const getSeafarers = async (request: any) => {
     ExpressionAttributeValues: {
       ":pk": gsi_pk,
     },
-    Limit: limit,
     ScanIndexForward:scanIndexForward
-  };
-  return await dynamoClient.query(params, (err, data) => {
-      if (err) {
-        console.log("Error", err);
-      } else {
-        console.log("Successful in History fetch", data);
-      }
-  }).promise();
+  });
+  
+  return await dynamoDbClient.send(queryCommand);
 }
 
 export const getSeafarerById = async (id: string) => {
@@ -119,23 +111,17 @@ export const getSeafarerById = async (id: string) => {
 }
 
 export const getSeafarerDataById = async (seafarerId: string) => {
-  const params: DynamoDB.DocumentClient.QueryInput = {
+  const queryCommand = new QueryCommand({
     TableName: TABLE_NAME,
     KeyConditionExpression: '#pk = :pk',
     ExpressionAttributeNames: {
-      "#pk": 'id'
+      "#pk": 'id',
     },
     ExpressionAttributeValues: {
       ":pk": seafarerId,
     }
-  };
-  return await dynamoClient.query(params, function (err, data) {
-      if (err) {
-        console.log("Error", err);
-      } else {
-        console.log("Success", data);
-      }
-  }).promise();
+  });
+  return await dynamoDbClient.send(queryCommand);
 }
 
 function formatAuditVersion(latestValue: number): string {
@@ -196,8 +182,8 @@ const doFilter = async (sk: any, value: any, baseSearchRequest: any) => {
 }
 
 export const filterSearch = async (request: any) => {
-  const {data, sk, limit, scanIndexForward, startKey} = request;
-  const params: DynamoDB.DocumentClient.QueryInput = {
+  const {data, sk, scanIndexForward, startKey} = request;
+  const params = new QueryCommand({
     TableName: TABLE_NAME,
     IndexName: INDEX_NAME,
     ExclusiveStartKey: startKey,
@@ -210,16 +196,9 @@ export const filterSearch = async (request: any) => {
       ":pk": sk,
       ":sk": data
     },
-    Limit: limit,
     ScanIndexForward:scanIndexForward
-  };
-  return await dynamoClient.query(params, (err, data) => {
-    if (err) {
-      console.log("Error", err);
-    } else {
-      console.log("Successful", data);
-    }
-  }).promise();
+  });
+  return await dynamoDbClient.send(params);
 }
 
 function getSeafarersWithCommonId(...arrays: { [key: string]: any }[][]): { [key: string]: any }[] {
