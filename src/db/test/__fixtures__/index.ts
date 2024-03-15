@@ -15,3 +15,8 @@ export const seafarer:Seafarer = {
     source: 'source',
     vesselName: 'vesselName'
 }
+
+export const searchRequest = {
+    startKey: null,
+    scanIndexForward: true
+}

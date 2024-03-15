@@ -1,18 +1,21 @@
 import {
 	DynamoDBDocumentClient,
 	GetCommand,
+	QueryCommand,
 	TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 
 import {
 	getSeafarerById,
+	getSeafarerDataById,
+	getSeafarers,
 	saveSeafarer
 } from '../seafarer';
 
 import { mockClient } from 'aws-sdk-client-mock';
 
 import {
-	seafarer
+	seafarer, searchRequest
 } from './__fixtures__';
 
 jest.mock('./config', () => ({
@@ -69,6 +72,44 @@ describe('seafarer dynamo repository', () => {
 			expect(
 				dynamoMock.commandCalls(TransactWriteCommand)[0].args[0].input
 			).toMatchSnapshot();
+		});
+    });
+
+	describe('getSeafarers', () => {
+		it('should get seafarers', async () => {
+			await getSeafarers(searchRequest);
+			expect(dynamoMock.commandCalls(QueryCommand)[0].args[0].input).toEqual({
+				TableName: "match-table",
+				IndexName: "sk-data-index",
+				ExclusiveStartKey: null,
+				KeyConditionExpression: '#pk = :pk',
+				ExpressionAttributeNames: {
+				"#pk": 'sk',
+				},
+				ExpressionAttributeValues: {
+				":pk": "v0#SEAFARER#STAGING",
+				},
+				ScanIndexForward:true
+  
+			});
+		});
+    });
+
+	describe('getSeafarersData', () => {
+		it('should get seafarers data', async () => {
+			const seafarerId = '1';
+			await getSeafarerDataById(seafarerId);
+			expect(dynamoMock.commandCalls(QueryCommand)[0].args[0].input).toEqual({
+				TableName: 'match-table',
+				KeyConditionExpression: '#pk = :pk',
+				ExpressionAttributeNames: {
+				"#pk": 'id',
+				},
+				ExpressionAttributeValues: {
+				":pk": seafarerId,
+				}
+
+			});
 		});
     });
 });
